@@ -2,13 +2,23 @@ package com.example.klondikesolitaire.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -19,24 +29,66 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.klondikesolitaire.game.engine.KlondikeEngine
+import com.example.klondikesolitaire.game.model.Card
+import com.example.klondikesolitaire.game.model.GameState
+import com.example.klondikesolitaire.game.model.Move
+import com.example.klondikesolitaire.ui.components.CardView
+import com.example.klondikesolitaire.ui.components.DecorativeSquareSlot
+import com.example.klondikesolitaire.ui.components.SlotView
 import com.example.klondikesolitaire.ui.game.layout.GameDimensions
 import com.example.klondikesolitaire.ui.game.layout.LayoutDebugOverlay
+import com.example.klondikesolitaire.viewmodel.CardDestination
+import com.example.klondikesolitaire.viewmodel.CardSource
 import com.example.klondikesolitaire.viewmodel.GameViewModel
 import com.example.klondikesolitaire.viewmodel.GameViewModelFactory
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 enum class GameEntryMode {
     ForceNew,
     ContinueOrNew
 }
+
+private sealed class DropTarget {
+    data class Foundation(val index: Int) : DropTarget()
+    data class Tableau(val index: Int) : DropTarget()
+}
+
+private data class ActiveDrag(
+    val source: CardSource,
+    val card: Card,
+    val startTopLeft: Offset,
+    val size: IntSize,
+    val legalFoundationTargets: Set<Int>,
+    val legalTableauTargets: Set<Int>
+)
 
 @Composable
 fun GameScreen(
@@ -45,10 +97,20 @@ fun GameScreen(
 ) {
     var showPauseDialog by remember { mutableStateOf(false) }
     var showLayoutDebug by remember { mutableStateOf(false) }
+    var alwaysShowAutoComplete by rememberSaveable { mutableStateOf(false) }
 
     val appContext = LocalContext.current.applicationContext
     val vm: GameViewModel = viewModel(factory = GameViewModelFactory(appContext))
     val ui by vm.ui.collectAsState()
+
+    val scope = rememberCoroutineScope()
+    val targetRects = remember { mutableStateMapOf<DropTarget, Rect>() }
+
+    var activeDrag by remember { mutableStateOf<ActiveDrag?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+
+    var hintFoundations by remember { mutableStateOf(emptySet<Int>()) }
+    var hintTableau by remember { mutableStateOf(emptySet<Int>()) }
 
     LaunchedEffect(entryMode) {
         when (entryMode) {
@@ -67,9 +129,9 @@ fun GameScreen(
 
             val bgBrush = Brush.verticalGradient(
                 colors = listOf(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.95f),
-                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.85f),
-                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.80f)
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.96f),
+                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.84f),
+                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.78f)
                 )
             )
 
@@ -81,36 +143,152 @@ fun GameScreen(
                         PaddingValues(
                             start = dims.sidePadding,
                             end = dims.sidePadding,
-                            top = dims.hudPaddingTop
+                            top = dims.hudPaddingTop,
+                            bottom = dims.bottomBarHeight + 10.dp
                         )
                     )
             ) {
-                Text(
-                    text = "Game Coming Soon",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    TopHud(
+                        score = ui.score,
+                        elapsedTimeMs = ui.elapsedTimeMs,
+                        moves = ui.moves
+                    )
 
-                Text(
-                    text = "Moves: ${ui.moves} • Score: ${ui.score}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(top = 6.dp)
-                )
+                    TopRowArea(
+                        dims = dims,
+                        ui = ui,
+                        hintFoundations = hintFoundations,
+                        activeDrag = activeDrag,
+                        onTargetRect = { target, rect -> targetRects[target] = rect },
+                        onStockTap = { vm.drawFromStock() },
+                        onWasteTap = { vm.tapCardAssist(CardSource.WasteTop) },
+                        onStartWasteDrag = { card, startTopLeft, size ->
+                            val legal = KlondikeEngine.legalTargetsForSelection(
+                                ui.game,
+                                KlondikeEngine.Selection.WasteTop
+                            )
+                            activeDrag = ActiveDrag(
+                                source = CardSource.WasteTop,
+                                card = card,
+                                startTopLeft = startTopLeft,
+                                size = size,
+                                legalFoundationTargets = legal.foundationTargets.toSet(),
+                                legalTableauTargets = legal.tableauTargets.toSet()
+                            )
+                            dragOffset = Offset.Zero
+                        },
+                        onWasteDrag = { amount ->
+                            dragOffset += amount
+                        },
+                        onEndDrag = onEndDrag@{
+                            val drag = activeDrag ?: return@onEndDrag
+                            val destination = findDropTarget(
+                                targetRects = targetRects,
+                                point = drag.startTopLeft + dragOffset + Offset(
+                                    drag.size.width / 2f,
+                                    drag.size.height / 2f
+                                )
+                            )
+                            handleDrop(
+                                vm = vm,
+                                uiState = ui.game,
+                                drag = drag,
+                                destination = destination,
+                                onSuccess = {
+                                    activeDrag = null
+                                    dragOffset = Offset.Zero
+                                },
+                                onIllegal = {
+                                    scope.launch {
+                                        val startX = dragOffset.x
+                                        val startY = dragOffset.y
+                                        val steps = 8
+                                        repeat(steps) { idx ->
+                                            val t = (idx + 1) / steps.toFloat()
+                                            dragOffset = Offset(
+                                                x = startX * (1f - t),
+                                                y = startY * (1f - t)
+                                            )
+                                            delay(16)
+                                        }
+                                        activeDrag = null
+                                        dragOffset = Offset.Zero
+                                    }
+                                }
+                            )
+                        }
+                    )
 
-                if (com.example.klondikesolitaire.BuildConfig.DEBUG) {
-                    FilledTonalButton(
-                        onClick = { showLayoutDebug = !showLayoutDebug },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 4.dp)
-                            .size(width = 120.dp, height = 40.dp)
-                    ) {
-                        Text(if (showLayoutDebug) "Hide Layout" else "Show Layout")
-                    }
+                    TableauArea(
+                        dims = dims,
+                        ui = ui,
+                        hintTableau = hintTableau,
+                        activeDrag = activeDrag,
+                        onTargetRect = { target, rect -> targetRects[target] = rect },
+                        onCardTap = { source -> vm.tapCardAssist(source) },
+                        onCardDoubleTap = { source -> vm.tapCardAssist(source) },
+                        onStartCardDrag = { source, card, startTopLeft, size ->
+                            val legal = when (source) {
+                                is CardSource.Tableau -> KlondikeEngine.legalTargetsForSelection(
+                                    ui.game,
+                                    KlondikeEngine.Selection.TableauRun(source.column, source.index)
+                                )
+                                else -> KlondikeEngine.LegalTargets(emptyList(), emptyList())
+                            }
+                            activeDrag = ActiveDrag(
+                                source = source,
+                                card = card,
+                                startTopLeft = startTopLeft,
+                                size = size,
+                                legalFoundationTargets = legal.foundationTargets.toSet(),
+                                legalTableauTargets = legal.tableauTargets.toSet()
+                            )
+                            dragOffset = Offset.Zero
+                        },
+                        onCardDrag = { amount -> dragOffset += amount },
+                        onEndDrag = onEndDrag@{
+                            val drag = activeDrag ?: return@onEndDrag
+                            val destination = findDropTarget(
+                                targetRects = targetRects,
+                                point = drag.startTopLeft + dragOffset + Offset(
+                                    drag.size.width / 2f,
+                                    drag.size.height / 2f
+                                )
+                            )
+
+                            handleDrop(
+                                vm = vm,
+                                uiState = ui.game,
+                                drag = drag,
+                                destination = destination,
+                                onSuccess = {
+                                    activeDrag = null
+                                    dragOffset = Offset.Zero
+                                },
+                                onIllegal = {
+                                    scope.launch {
+                                        val startX = dragOffset.x
+                                        val startY = dragOffset.y
+                                        val steps = 8
+                                        repeat(steps) { idx ->
+                                            val t = (idx + 1) / steps.toFloat()
+                                            dragOffset = Offset(
+                                                x = startX * (1f - t),
+                                                y = startY * (1f - t)
+                                            )
+                                            delay(16)
+                                        }
+                                        activeDrag = null
+                                        dragOffset = Offset.Zero
+                                    }
+                                }
+                            )
+                        }
+                    )
                 }
 
                 if (com.example.klondikesolitaire.BuildConfig.DEBUG && showLayoutDebug) {
@@ -118,10 +296,78 @@ fun GameScreen(
                         dims = dims,
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(top = 46.dp)
+                            .padding(top = 40.dp)
                     )
                 }
             }
+
+            if (activeDrag != null) {
+                val drag = activeDrag ?: return@BoxWithConstraints
+                val density = LocalDensity.current
+                Box(
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                x = (drag.startTopLeft.x + dragOffset.x).roundToInt(),
+                                y = (drag.startTopLeft.y + dragOffset.y).roundToInt()
+                            )
+                        }
+                        .size(
+                            width = with(density) { drag.size.width.toDp() },
+                            height = with(density) { drag.size.height.toDp() }
+                        )
+                        .shadow(12.dp, MaterialTheme.shapes.small)
+                ) {
+                    CardView(
+                        card = drag.card,
+                        faceStyle = ui.selectedTheme.faceStyle,
+                        backStyle = ui.selectedTheme.cardBackStyle,
+                        isSelected = true,
+                        onClick = {},
+                        onDoubleClick = {},
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            val endgameLikely = remember(ui.game, alwaysShowAutoComplete) {
+                alwaysShowAutoComplete ||
+                    (ui.stock.isEmpty() && ui.waste.isEmpty() && ui.foundations.sumOf { it.size } >= 20)
+            }
+
+            if (endgameLikely) {
+                FilledTonalButton(
+                    onClick = { vm.autocomplete() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = dims.bottomBarHeight + 10.dp)
+                        .combinedClickable(
+                            onClick = { vm.autocomplete() },
+                            onLongClick = { alwaysShowAutoComplete = !alwaysShowAutoComplete }
+                        )
+                ) {
+                    Text("Auto Complete")
+                }
+            }
+
+            BottomBar(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                onSettings = { showLayoutDebug = !showLayoutDebug },
+                onThemes = { /* reserved for themes nav */ },
+                onPlay = { vm.startNewGame() },
+                onHints = {
+                    vm.hint()
+                    val hintTargets = findHintTargets(ui.game)
+                    hintFoundations = hintTargets.first
+                    hintTableau = hintTargets.second
+                    scope.launch {
+                        delay(750)
+                        hintFoundations = emptySet()
+                        hintTableau = emptySet()
+                    }
+                },
+                onUndo = { vm.undo() }
+            )
 
             if (showPauseDialog) {
                 PauseDialog(
@@ -148,9 +394,7 @@ fun GameScreen(
 
             if (ui.showWinSheet) {
                 WinDialog(
-                    onPlayAgain = {
-                        vm.startNewGame(ui.drawMode)
-                    },
+                    onPlayAgain = { vm.startNewGame(ui.drawMode) },
                     onHome = {
                         vm.saveGameOnBackground()
                         onGoHome()
@@ -162,6 +406,372 @@ fun GameScreen(
 }
 
 @Composable
+private fun TopHud(score: Int, elapsedTimeMs: Long, moves: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HudLabel("Score: $score")
+        HudLabel("Time: ${formatElapsed(elapsedTimeMs)}")
+        HudLabel("Moves: $moves")
+    }
+}
+
+@Composable
+private fun HudLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        color = Color.White,
+        textAlign = TextAlign.Center,
+        shadow = Shadow(color = Color.Black.copy(alpha = 0.45f), offset = Offset(1f, 1f), blurRadius = 3f)
+    )
+}
+
+@Composable
+private fun TopRowArea(
+    dims: GameDimensions,
+    ui: com.example.klondikesolitaire.viewmodel.GameUiState,
+    hintFoundations: Set<Int>,
+    activeDrag: ActiveDrag?,
+    onTargetRect: (DropTarget, Rect) -> Unit,
+    onStockTap: () -> Unit,
+    onWasteTap: () -> Unit,
+    onStartWasteDrag: (Card, Offset, IntSize) -> Unit,
+    onWasteDrag: (Offset) -> Unit,
+    onEndDrag: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(dims.topRowGap)) {
+            SlotView(
+                highlighted = false,
+                cornerRadius = dims.slotCornerRadius,
+                borderWidth = dims.slotBorderWidth,
+                modifier = Modifier
+                    .width(dims.cardWidth)
+                    .height(dims.cardHeight)
+                    .combinedClickable(onClick = onStockTap)
+            ) {
+                val stockTop = ui.stock.lastOrNull()
+                if (stockTop != null) {
+                    CardView(
+                        card = stockTop,
+                        faceStyle = ui.selectedTheme.faceStyle,
+                        backStyle = ui.selectedTheme.cardBackStyle,
+                        isSelected = false,
+                        onClick = onStockTap,
+                        onDoubleClick = onStockTap,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            SlotView(
+                highlighted = false,
+                cornerRadius = dims.slotCornerRadius,
+                borderWidth = dims.slotBorderWidth,
+                modifier = Modifier
+                    .width(dims.cardWidth)
+                    .height(dims.cardHeight)
+            ) {
+                val topWaste = ui.waste.lastOrNull()
+                if (topWaste != null) {
+                    var wasteRect by remember { mutableStateOf(Rect.Zero) }
+                    CardView(
+                        card = topWaste,
+                        faceStyle = ui.selectedTheme.faceStyle,
+                        backStyle = ui.selectedTheme.cardBackStyle,
+                        isSelected = activeDrag?.source == CardSource.WasteTop,
+                        onClick = onWasteTap,
+                        onDoubleClick = onWasteTap,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onGloballyPositioned { wasteRect = it.boundsInRoot() }
+                            .pointerInput(topWaste, activeDrag) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        onStartWasteDrag(topWaste, wasteRect.topLeft, IntSize(wasteRect.width.roundToInt(), wasteRect.height.roundToInt()))
+                                    },
+                                    onDragEnd = onEndDrag,
+                                    onDragCancel = onEndDrag,
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        onWasteDrag(dragAmount)
+                                    }
+                                )
+                            }
+                    )
+                }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+            repeat(4) { foundationIndex ->
+                val highlighted = foundationIndex in hintFoundations ||
+                    (activeDrag?.legalFoundationTargets?.contains(foundationIndex) == true)
+
+                SlotView(
+                    highlighted = highlighted,
+                    cornerRadius = dims.slotCornerRadius,
+                    borderWidth = dims.slotBorderWidth,
+                    modifier = Modifier
+                        .width(dims.cardWidth)
+                        .height(dims.cardHeight)
+                        .onGloballyPositioned {
+                            onTargetRect(DropTarget.Foundation(foundationIndex), it.boundsInRoot())
+                        }
+                ) {
+                    ui.foundations[foundationIndex].lastOrNull()?.let { card ->
+                        CardView(
+                            card = card,
+                            faceStyle = ui.selectedTheme.faceStyle,
+                            backStyle = ui.selectedTheme.cardBackStyle,
+                            isSelected = false,
+                            onClick = {},
+                            onDoubleClick = {},
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+
+            DecorativeSquareSlot(
+                highlighted = false,
+                modifier = Modifier
+                    .width(dims.cardWidth * 0.6f)
+                    .padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun TableauArea(
+    dims: GameDimensions,
+    ui: com.example.klondikesolitaire.viewmodel.GameUiState,
+    hintTableau: Set<Int>,
+    activeDrag: ActiveDrag?,
+    onTargetRect: (DropTarget, Rect) -> Unit,
+    onCardTap: (CardSource) -> Unit,
+    onCardDoubleTap: (CardSource) -> Unit,
+    onStartCardDrag: (CardSource, Card, Offset, IntSize) -> Unit,
+    onCardDrag: (Offset) -> Unit,
+    onEndDrag: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(),
+        horizontalArrangement = Arrangement.spacedBy(dims.columnGap)
+    ) {
+        repeat(7) { columnIndex ->
+            val pile = ui.tableau[columnIndex]
+            val highlighted = columnIndex in hintTableau ||
+                (activeDrag?.legalTableauTargets?.contains(columnIndex) == true)
+
+            Box(
+                modifier = Modifier
+                    .width(dims.cardWidth)
+                    .fillMaxHeight()
+                    .onGloballyPositioned {
+                        onTargetRect(DropTarget.Tableau(columnIndex), it.boundsInRoot())
+                    }
+                    .border(
+                        width = if (highlighted) 2.dp else 0.dp,
+                        color = if (highlighted) MaterialTheme.colorScheme.tertiary else Color.Transparent,
+                        shape = MaterialTheme.shapes.small
+                    )
+            ) {
+                if (pile.isEmpty()) {
+                    SlotView(
+                        highlighted = highlighted,
+                        cornerRadius = dims.slotCornerRadius,
+                        borderWidth = dims.slotBorderWidth,
+                        modifier = Modifier
+                            .width(dims.cardWidth)
+                            .height(dims.cardHeight)
+                    )
+                }
+
+                var runningY = 0.dp
+                pile.forEachIndexed { cardIndex, card ->
+                    val source = CardSource.Tableau(column = columnIndex, index = cardIndex)
+                    val overlap = if (card.faceUp) dims.overlapFaceUp else dims.overlapFaceDown
+                    var cardRect by remember(cardIndex, columnIndex) { mutableStateOf(Rect.Zero) }
+
+                    CardView(
+                        card = card,
+                        faceStyle = ui.selectedTheme.faceStyle,
+                        backStyle = ui.selectedTheme.cardBackStyle,
+                        isSelected = activeDrag?.source == source,
+                        onClick = { onCardTap(source) },
+                        onDoubleClick = { onCardDoubleTap(source) },
+                        modifier = Modifier
+                            .offset(y = runningY)
+                            .width(dims.cardWidth)
+                            .height(dims.cardHeight)
+                            .onGloballyPositioned { cardRect = it.boundsInRoot() }
+                            .pointerInput(card, source, activeDrag) {
+                                if (!card.faceUp) return@pointerInput
+                                detectDragGestures(
+                                    onDragStart = {
+                                        onStartCardDrag(
+                                            source,
+                                            card,
+                                            cardRect.topLeft,
+                                            IntSize(cardRect.width.roundToInt(), cardRect.height.roundToInt())
+                                        )
+                                    },
+                                    onDragEnd = onEndDrag,
+                                    onDragCancel = onEndDrag,
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        onCardDrag(dragAmount)
+                                    }
+                                )
+                            }
+                    )
+
+                    runningY += overlap
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BottomBar(
+    modifier: Modifier = Modifier,
+    onSettings: () -> Unit,
+    onThemes: () -> Unit,
+    onPlay: () -> Unit,
+    onHints: () -> Unit,
+    onUndo: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(82.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        tonalElevation = 8.dp,
+        shadowElevation = 12.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BottomBarItem(icon = "⚙", label = "Settings", onClick = onSettings)
+            BottomBarItem(icon = "🎨", label = "Themes", onClick = onThemes)
+            BottomBarItem(icon = "▶", label = "Play", onClick = onPlay, emphasized = true)
+            BottomBarItem(icon = "💡", label = "Hints", onClick = onHints)
+            BottomBarItem(icon = "↶", label = "Undo", onClick = onUndo)
+        }
+    }
+}
+
+@Composable
+private fun BottomBarItem(
+    icon: String,
+    label: String,
+    onClick: () -> Unit,
+    emphasized: Boolean = false
+) {
+    val iconSize = if (emphasized) 30.sp else 22.sp
+    val textStyle = if (emphasized) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .combinedClickable(onClick = onClick)
+            .padding(horizontal = 2.dp)
+    ) {
+        Text(icon, fontSize = iconSize)
+        Text(label, style = textStyle)
+    }
+}
+
+private fun findDropTarget(targetRects: Map<DropTarget, Rect>, point: Offset): DropTarget? {
+    return targetRects.entries.firstOrNull { (_, rect) -> rect.contains(point) }?.key
+}
+
+private fun handleDrop(
+    vm: GameViewModel,
+    uiState: GameState,
+    drag: ActiveDrag,
+    destination: DropTarget?,
+    onSuccess: () -> Unit,
+    onIllegal: () -> Unit
+) {
+    val move = toMove(drag.source, destination) ?: return onIllegal()
+    val isValid = KlondikeEngine.validateMove(uiState, move)
+    if (!isValid) return onIllegal()
+
+    val cardDestination = when (destination) {
+        is DropTarget.Foundation -> CardDestination.Foundation(destination.index)
+        is DropTarget.Tableau -> CardDestination.Tableau(destination.index)
+        null -> null
+    } ?: return onIllegal()
+
+    vm.dragMove(drag.source, cardDestination)
+    onSuccess()
+}
+
+private fun toMove(source: CardSource, destination: DropTarget?): Move? {
+    destination ?: return null
+    return when (source) {
+        CardSource.Stock -> Move.DrawFromStock
+        CardSource.WasteTop -> when (destination) {
+            is DropTarget.Foundation -> Move.WasteToFoundation(destination.index)
+            is DropTarget.Tableau -> Move.WasteToTableau(destination.index)
+        }
+
+        is CardSource.Tableau -> when (destination) {
+            is DropTarget.Foundation -> Move.TableauToFoundation(source.column, destination.index)
+            is DropTarget.Tableau -> Move.TableauToTableau(source.column, source.index, destination.index)
+        }
+    }
+}
+
+private fun findHintTargets(state: GameState): Pair<Set<Int>, Set<Int>> {
+    val fromWaste = KlondikeEngine.legalTargetsForSelection(state, KlondikeEngine.Selection.WasteTop)
+    if (fromWaste.foundationTargets.isNotEmpty() || fromWaste.tableauTargets.isNotEmpty()) {
+        return fromWaste.foundationTargets.toSet() to fromWaste.tableauTargets.toSet()
+    }
+
+    for (col in 0..6) {
+        val pile = state.tableau[col]
+        val firstFaceUp = pile.indexOfFirst { it.faceUp }
+        if (firstFaceUp == -1) continue
+
+        val targets = KlondikeEngine.legalTargetsForSelection(
+            state,
+            KlondikeEngine.Selection.TableauRun(col, firstFaceUp)
+        )
+        if (targets.foundationTargets.isNotEmpty() || targets.tableauTargets.isNotEmpty()) {
+            return targets.foundationTargets.toSet() to targets.tableauTargets.toSet()
+        }
+    }
+
+    return emptySet<Int>() to emptySet()
+}
+
+private fun formatElapsed(ms: Long): String {
+    val totalSeconds = (ms / 1000L).coerceAtLeast(0)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
+
+
+@Composable
 private fun PauseDialog(
     onResume: () -> Unit,
     onNewGame: () -> Unit,
@@ -171,14 +781,8 @@ private fun PauseDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Paused") },
-        text = {
-            Column(Modifier.padding(top = 6.dp)) {
-                Text("What would you like to do?")
-            }
-        },
-        confirmButton = {
-            Button(onClick = onResume) { Text("Resume") }
-        },
+        text = { Text("What would you like to do?") },
+        confirmButton = { Button(onClick = onResume) { Text("Resume") } },
         dismissButton = {
             Column {
                 Button(onClick = onNewGame) { Text("New Game") }
@@ -197,11 +801,7 @@ private fun WinDialog(
         onDismissRequest = onPlayAgain,
         title = { Text("You Win!") },
         text = { Text("Great streak! Want another deal?") },
-        confirmButton = {
-            Button(onClick = onPlayAgain) { Text("Play Again") }
-        },
-        dismissButton = {
-            Button(onClick = onHome) { Text("Home") }
-        }
+        confirmButton = { Button(onClick = onPlayAgain) { Text("Play Again") } },
+        dismissButton = { Button(onClick = onHome) { Text("Home") } }
     )
 }
