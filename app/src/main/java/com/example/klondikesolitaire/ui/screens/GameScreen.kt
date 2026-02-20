@@ -15,8 +15,13 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -28,28 +33,31 @@ import com.example.klondikesolitaire.ui.game.layout.LayoutDebugOverlay
 import com.example.klondikesolitaire.viewmodel.GameViewModel
 import com.example.klondikesolitaire.viewmodel.GameViewModelFactory
 
+enum class GameEntryMode {
+    ForceNew,
+    ContinueOrNew
+}
+
 @Composable
 fun GameScreen(
+    entryMode: GameEntryMode,
     onGoHome: () -> Unit
 ) {
     var showPauseDialog by remember { mutableStateOf(false) }
-
-    // Debug-only: toggle overlay to verify scaling.
     var showLayoutDebug by remember { mutableStateOf(false) }
 
-    // Create GameViewModel scoped to this destination.
     val appContext = LocalContext.current.applicationContext
     val vm: GameViewModel = viewModel(factory = GameViewModelFactory(appContext))
+    val ui by vm.ui.collectAsState()
 
-    // Ensure entering the screen restores a saved game if present.
-    LaunchedEffect(Unit) {
-        vm.continueGame()
+    LaunchedEffect(entryMode) {
+        when (entryMode) {
+            GameEntryMode.ForceNew -> vm.startNewGame()
+            GameEntryMode.ContinueOrNew -> vm.continueGame()
+        }
     }
 
-    // Back from Game shows PauseDialog.
-    BackHandler {
-        showPauseDialog = true
-    }
+    BackHandler { showPauseDialog = true }
 
     Surface {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -57,7 +65,6 @@ fun GameScreen(
                 GameDimensions.calculate(maxWidth = maxWidth, maxHeight = maxHeight)
             }
 
-            // Placeholder background that follows the selected theme (for now: gradient).
             val bgBrush = Brush.verticalGradient(
                 colors = listOf(
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.95f),
@@ -78,12 +85,20 @@ fun GameScreen(
                         )
                     )
             ) {
-                // Placeholder game content
                 Text(
                     text = "Game Coming Soon",
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.align(Alignment.Center)
+                )
+
+                Text(
+                    text = "Moves: ${ui.moves} • Score: ${ui.score}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(top = 6.dp)
                 )
 
                 if (com.example.klondikesolitaire.BuildConfig.DEBUG) {
@@ -103,7 +118,7 @@ fun GameScreen(
                         dims = dims,
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(top = 4.dp)
+                            .padding(top = 46.dp)
                     )
                 }
             }
@@ -130,6 +145,18 @@ fun GameScreen(
                 )
                 vm.pause()
             }
+
+            if (ui.showWinSheet) {
+                WinDialog(
+                    onPlayAgain = {
+                        vm.startNewGame(ui.drawMode)
+                    },
+                    onHome = {
+                        vm.saveGameOnBackground()
+                        onGoHome()
+                    }
+                )
+            }
         }
     }
 }
@@ -153,11 +180,28 @@ private fun PauseDialog(
             Button(onClick = onResume) { Text("Resume") }
         },
         dismissButton = {
-            // Two secondary actions as buttons inside the dismiss area:
             Column {
                 Button(onClick = onNewGame) { Text("New Game") }
                 Button(onClick = onHome) { Text("Home") }
             }
+        }
+    )
+}
+
+@Composable
+private fun WinDialog(
+    onPlayAgain: () -> Unit,
+    onHome: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onPlayAgain,
+        title = { Text("You Win!") },
+        text = { Text("Great streak! Want another deal?") },
+        confirmButton = {
+            Button(onClick = onPlayAgain) { Text("Play Again") }
+        },
+        dismissButton = {
+            Button(onClick = onHome) { Text("Home") }
         }
     )
 }

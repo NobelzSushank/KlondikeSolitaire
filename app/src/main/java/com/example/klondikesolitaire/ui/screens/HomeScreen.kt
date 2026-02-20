@@ -65,8 +65,7 @@ fun HomeScreen(
             // Primary Play button (large)
             Button(
                 onClick = {
-                    // For now, create a fake saved game so Continue can appear later.
-                    appViewModel.createFakeSavedGame()
+                    appViewModel.clearSavedGame()
                     onPlay()
                 },
                 modifier = Modifier

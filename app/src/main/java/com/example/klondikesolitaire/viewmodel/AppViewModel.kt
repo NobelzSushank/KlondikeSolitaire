@@ -9,7 +9,6 @@ import com.example.klondikesolitaire.data.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -56,7 +55,11 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch { store.setHasSavedGame(value) }
     }
 
-    // Simple stubs to simulate game persistence for now:
-    fun createFakeSavedGame() = setHasSavedGame(true)
-    fun clearSavedGame() = setHasSavedGame(false)
+    /**
+     * Clears the full persisted game payload + Continue flag.
+     * Useful when the player taps Play (fresh game) rather than Continue.
+     */
+    fun clearSavedGame() {
+        viewModelScope.launch { store.clearSavedGame() }
+    }
 }

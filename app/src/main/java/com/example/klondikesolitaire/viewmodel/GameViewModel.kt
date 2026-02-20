@@ -59,7 +59,12 @@ data class GameUiState(
     // Internal meta
     val dealSeed: Long = 0L,
     val drawMode: DrawMode = DrawMode.Draw1
-)
+) {
+    val stock: List<com.example.klondikesolitaire.game.model.Card> get() = game.stock
+    val waste: List<com.example.klondikesolitaire.game.model.Card> get() = game.waste
+    val foundations: List<List<com.example.klondikesolitaire.game.model.Card>> get() = game.foundations
+    val tableau: List<List<com.example.klondikesolitaire.game.model.Card>> get() = game.tableau
+}
 
 sealed class CardSource {
     data object Stock : CardSource()
