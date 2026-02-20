@@ -1,0 +1,9 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+<!--    <style name="Base.Theme.KlondikeSolitaire" parent="Theme.Material3.DayNight.NoActionBar">-->
+<!--        &lt;!&ndash; Customize your dark theme here. &ndash;&gt;-->
+<!--        &lt;!&ndash; <item name="colorPrimary">@color/my_dark_primary</item> &ndash;&gt;-->
+<!--    </style>-->
+    <!-- Simple theme wrapper for the Activity (Compose uses its own MaterialTheme). -->
+    <style name="Theme.KlondikeSolitaire" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
