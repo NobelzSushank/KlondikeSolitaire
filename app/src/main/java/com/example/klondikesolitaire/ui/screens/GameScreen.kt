@@ -422,10 +422,15 @@ private fun TopHud(score: Int, elapsedTimeMs: Long, moves: Int) {
 private fun HudLabel(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.titleMedium,
+        style = MaterialTheme.typography.titleMedium.copy(
+            shadow = Shadow(
+                color = Color.Black.copy(alpha = 0.45f),
+                offset = Offset(1f, 1f),
+                blurRadius = 3f
+            )
+        ),
         color = Color.White,
-        textAlign = TextAlign.Center,
-        shadow = Shadow(color = Color.Black.copy(alpha = 0.45f), offset = Offset(1f, 1f), blurRadius = 3f)
+        textAlign = TextAlign.Center
     )
 }
 
