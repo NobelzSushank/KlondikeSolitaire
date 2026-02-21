@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -288,7 +289,26 @@ fun GameScreen(
                         selectedSource = selectedSource,
                         leftHandedMode = appSettings.leftHandedMode,
                         onTargetRect = { target, rect -> targetRects[target] = rect },
-                        onCardTap = { source -> selectedSource = source },
+                        onCardTap = { source ->
+                            val current = selectedSource
+                            if (current is CardSource.Tableau && source is CardSource.Tableau && current.column != source.column) {
+                                val move = Move.TableauToTableau(
+                                    fromColumn = current.column,
+                                    fromIndex = current.index,
+                                    toColumn = source.column
+                                )
+                                if (KlondikeEngine.validateMove(ui.game, move)) {
+                                    vm.dragMove(current, CardDestination.Tableau(source.column))
+                                    soundManager.playMove(appSettings.soundEnabled)
+                                    hapticsManager.performLight(appSettings.hapticsEnabled)
+                                } else {
+                                    soundManager.playInvalid(appSettings.soundEnabled)
+                                }
+                                selectedSource = null
+                            } else {
+                                selectedSource = source
+                            }
+                        },
                         onCardDoubleTap = { source ->
                             vm.tapCardAssist(source)
                             soundManager.playMove(appSettings.soundEnabled)
@@ -738,11 +758,19 @@ private fun TableauArea(
                         isSelected = activeDrag?.source == source || selectedSource == source,
                         onClick = { onCardTap(source) },
                         onDoubleClick = { onCardDoubleTap(source) },
+                        enableClicks = false,
                         modifier = Modifier
                             .offset(y = runningY)
                             .width(dims.cardWidth)
                             .height(dims.cardHeight)
                             .onGloballyPositioned { cardRect = it.boundsInRoot() }
+                            .pointerInput(card, source) {
+                                if (!card.faceUp) return@pointerInput
+                                detectTapGestures(
+                                    onTap = { onCardTap(source) },
+                                    onDoubleTap = { onCardDoubleTap(source) }
+                                )
+                            }
                             .pointerInput(card, source, activeDrag) {
                                 if (!card.faceUp) return@pointerInput
                                 detectDragGestures(

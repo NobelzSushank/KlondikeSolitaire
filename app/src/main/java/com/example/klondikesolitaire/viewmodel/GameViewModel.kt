@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -161,7 +162,7 @@ class GameViewModel(appContext: Context) : ViewModel() {
 
     fun continueGame() {
         viewModelScope.launch {
-            val dto = store.savedGameFlow.map { it }.distinctUntilChanged().collectFirstNonNull()
+            val dto = store.savedGameFlow.map { it }.distinctUntilChanged().firstOrNull { it != null }
             if (dto == null) {
                 // No saved game: start a new one
                 startNewGame(_ui.value.drawMode)
@@ -445,20 +446,3 @@ class GameViewModel(appContext: Context) : ViewModel() {
         }
     }
 }
-
-/**
- * Small helper: collect the first non-null item from a flow.
- * Keeps code readable for beginners.
- */
-private suspend fun <T> kotlinx.coroutines.flow.Flow<T?>.collectFirstNonNull(): T? {
-    var result: T? = null
-    this.collect { value ->
-        if (value != null && result == null) {
-            result = value
-            throw StopCollectException
-        }
-    }
-    return result
-}
-
-private object StopCollectException : Throwable()
