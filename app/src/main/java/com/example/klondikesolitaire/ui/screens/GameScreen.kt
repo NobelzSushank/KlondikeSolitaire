@@ -139,13 +139,22 @@ fun GameScreen(
             val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-            val bgBrush = Brush.verticalGradient(
-                colors = listOf(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.96f),
-                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.84f),
-                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.78f)
+            val bgBrush = when (ui.selectedTheme.backgroundStyle) {
+                "bg_ocean" -> Brush.verticalGradient(listOf(Color(0xFF0D47A1), Color(0xFF1976D2)))
+                "bg_sunset" -> Brush.verticalGradient(listOf(Color(0xFFBF360C), Color(0xFFF57C00)))
+                "bg_royal" -> Brush.verticalGradient(listOf(Color(0xFF4A148C), Color(0xFF6A1B9A)))
+                "bg_aurora" -> Brush.verticalGradient(listOf(Color(0xFF004D40), Color(0xFF26A69A)))
+                "bg_ruby" -> Brush.verticalGradient(listOf(Color(0xFF880E4F), Color(0xFFC2185B)))
+                "bg_night" -> Brush.verticalGradient(listOf(Color(0xFF212121), Color(0xFF424242)))
+                "bg_gold" -> Brush.verticalGradient(listOf(Color(0xFF8D6E63), Color(0xFFD4AF37)))
+                else -> Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.96f),
+                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.84f),
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.78f)
+                    )
                 )
-            )
+            }
 
             Box(
                 modifier = Modifier

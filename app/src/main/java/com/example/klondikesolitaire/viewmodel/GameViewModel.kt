@@ -100,15 +100,19 @@ class GameViewModel(appContext: Context) : ViewModel() {
         viewModelScope.launch {
             combine(
                 store.statsFlow,
-                store.savedGameFlow.map { it != null }.distinctUntilChanged()
-            ) { stats, hasSave -> stats to hasSave }
-                .collect { (stats, hasSave) ->
+                store.savedGameFlow.map { it != null }.distinctUntilChanged(),
+                store.settingsFlow
+            ) { stats, hasSave, settings -> Triple(stats, hasSave, settings) }
+                .collect { (stats, hasSave, settings) ->
                     _ui.value = _ui.value.copy(
                         gamesPlayed = stats.gamesPlayed,
                         wins = stats.wins,
                         streak = stats.streak,
                         bestTimeMs = stats.bestWinTimeMs,
-                        savedGameExists = hasSave
+                        savedGameExists = hasSave,
+                        selectedTheme = settings.toThemeSelection(),
+                        premiumSessionRemainingMillis =
+                            (settings.premiumSessionEndsAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
                     )
                 }
         }

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.klondikesolitaire.game.persistence.GameSaveDto
+import com.example.klondikesolitaire.game.persistence.GameThemeSelection
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -31,8 +32,21 @@ data class AppStats(
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.System,
-    val hasSavedGame: Boolean = false
-)
+    val hasSavedGame: Boolean = false,
+    val backgroundStyle: String = "default_gradient",
+    val cardBackStyle: String = "default_back",
+    val faceStyle: String = "classic_face",
+    val premiumSessionEndsAtMs: Long = 0L
+) {
+    val isPremiumSessionActive: Boolean
+        get() = premiumSessionEndsAtMs > System.currentTimeMillis()
+
+    fun toThemeSelection(): GameThemeSelection = GameThemeSelection(
+        backgroundStyle = backgroundStyle,
+        cardBackStyle = cardBackStyle,
+        faceStyle = faceStyle
+    )
+}
 
 /**
  * DataStore manager (Preferences) — beginner-friendly wrapper.
@@ -50,7 +64,11 @@ class AppDataStore(private val context: Context) {
                 val themeId = prefs[AppPreferences.THEME_MODE] ?: ThemeMode.System.id
                 AppSettings(
                     themeMode = ThemeMode.fromId(themeId),
-                    hasSavedGame = prefs[AppPreferences.HAS_SAVED_GAME] ?: false
+                    hasSavedGame = prefs[AppPreferences.HAS_SAVED_GAME] ?: false,
+                    backgroundStyle = prefs[AppPreferences.COSMETIC_BACKGROUND_STYLE] ?: "default_gradient",
+                    cardBackStyle = prefs[AppPreferences.COSMETIC_CARD_BACK_STYLE] ?: "default_back",
+                    faceStyle = prefs[AppPreferences.COSMETIC_FACE_STYLE] ?: "classic_face",
+                    premiumSessionEndsAtMs = prefs[AppPreferences.PREMIUM_SESSION_ENDS_AT_MS] ?: 0L
                 )
             }
 
@@ -84,6 +102,23 @@ class AppDataStore(private val context: Context) {
 
     suspend fun setHasSavedGame(value: Boolean) {
         context.dataStore.edit { it[AppPreferences.HAS_SAVED_GAME] = value }
+    }
+
+    suspend fun setBackgroundStyle(styleId: String) {
+        context.dataStore.edit { it[AppPreferences.COSMETIC_BACKGROUND_STYLE] = styleId }
+    }
+
+    suspend fun setCardBackStyle(styleId: String) {
+        context.dataStore.edit { it[AppPreferences.COSMETIC_CARD_BACK_STYLE] = styleId }
+    }
+
+    suspend fun setFaceStyle(styleId: String) {
+        context.dataStore.edit { it[AppPreferences.COSMETIC_FACE_STYLE] = styleId }
+    }
+
+    suspend fun startPremiumSession(durationMillis: Long) {
+        val endsAt = System.currentTimeMillis() + durationMillis.coerceAtLeast(0L)
+        context.dataStore.edit { it[AppPreferences.PREMIUM_SESSION_ENDS_AT_MS] = endsAt }
     }
 
     suspend fun saveGame(dto: GameSaveDto) {

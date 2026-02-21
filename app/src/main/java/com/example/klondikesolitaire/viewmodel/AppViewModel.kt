@@ -55,6 +55,22 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch { store.setHasSavedGame(value) }
     }
 
+    fun setBackgroundStyle(styleId: String) {
+        viewModelScope.launch { store.setBackgroundStyle(styleId) }
+    }
+
+    fun setCardBackStyle(styleId: String) {
+        viewModelScope.launch { store.setCardBackStyle(styleId) }
+    }
+
+    fun setFaceStyle(styleId: String) {
+        viewModelScope.launch { store.setFaceStyle(styleId) }
+    }
+
+    fun startPremiumSession(durationMillis: Long = 20 * 60 * 1000L) {
+        viewModelScope.launch { store.startPremiumSession(durationMillis) }
+    }
+
     /**
      * Clears the full persisted game payload + Continue flag.
      * Useful when the player taps Play (fresh game) rather than Continue.
