@@ -3,9 +3,9 @@ package com.example.klondikesolitaire.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,6 +44,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -116,6 +118,9 @@ fun GameScreen(
 
     var hintFoundations by remember { mutableStateOf(emptySet<Int>()) }
     var hintTableau by remember { mutableStateOf(emptySet<Int>()) }
+    var selectedSource by remember { mutableStateOf<CardSource?>(null) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var showThemesDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(entryMode) {
         when (entryMode) {
@@ -170,6 +175,7 @@ fun GameScreen(
                         ui = ui,
                         hintFoundations = hintFoundations,
                         activeDrag = activeDrag,
+                        selectedSource = selectedSource,
                         onTargetRect = { target, rect -> targetRects[target] = rect },
                         onStockTap = { vm.drawFromStock() },
                         onWasteTap = { vm.tapCardAssist(CardSource.WasteTop) },
@@ -235,8 +241,9 @@ fun GameScreen(
                         ui = ui,
                         hintTableau = hintTableau,
                         activeDrag = activeDrag,
+                        selectedSource = selectedSource,
                         onTargetRect = { target, rect -> targetRects[target] = rect },
-                        onCardTap = { source -> vm.tapCardAssist(source) },
+                        onCardTap = { source -> selectedSource = source },
                         onCardDoubleTap = { source -> vm.tapCardAssist(source) },
                         onStartCardDrag = { source, card, startTopLeft, size ->
                             val legal = when (source) {
@@ -246,6 +253,7 @@ fun GameScreen(
                                 )
                                 else -> KlondikeEngine.LegalTargets(emptyList(), emptyList())
                             }
+                            selectedSource = source
                             activeDrag = ActiveDrag(
                                 source = source,
                                 card = card,
@@ -361,8 +369,8 @@ fun GameScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = navBarBottom),
-                onSettings = { showLayoutDebug = !showLayoutDebug },
-                onThemes = { /* reserved for themes nav */ },
+                onSettings = { showSettingsDialog = true },
+                onThemes = { showThemesDialog = true },
                 onPlay = { vm.startNewGame() },
                 onHints = {
                     vm.hint()
@@ -377,6 +385,30 @@ fun GameScreen(
                 },
                 onUndo = { vm.undo() }
             )
+
+            if (showSettingsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSettingsDialog = false },
+                    title = { Text("Settings") },
+                    text = { Text("Settings panel will be connected here.
+
+Tip: Use Play for a fresh deal, Hints for legal-target glow, and Undo to roll back.") },
+                    confirmButton = {
+                        Button(onClick = { showSettingsDialog = false }) { Text("Close") }
+                    }
+                )
+            }
+
+            if (showThemesDialog) {
+                AlertDialog(
+                    onDismissRequest = { showThemesDialog = false },
+                    title = { Text("Themes") },
+                    text = { Text("Card face/back themes are active from saved theme selection. Full picker UI can be wired to this action.") },
+                    confirmButton = {
+                        Button(onClick = { showThemesDialog = false }) { Text("Close") }
+                    }
+                )
+            }
 
             if (showPauseDialog) {
                 PauseDialog(
@@ -449,6 +481,7 @@ private fun TopRowArea(
     ui: com.example.klondikesolitaire.viewmodel.GameUiState,
     hintFoundations: Set<Int>,
     activeDrag: ActiveDrag?,
+    selectedSource: CardSource?,
     onTargetRect: (DropTarget, Rect) -> Unit,
     onStockTap: () -> Unit,
     onWasteTap: () -> Unit,
@@ -500,19 +533,12 @@ private fun TopRowArea(
                         card = topWaste,
                         faceStyle = ui.selectedTheme.faceStyle,
                         backStyle = ui.selectedTheme.cardBackStyle,
-                        isSelected = activeDrag?.source == CardSource.WasteTop,
+                        isSelected = activeDrag?.source == CardSource.WasteTop || selectedSource == CardSource.WasteTop,
                         onClick = onWasteTap,
                         onDoubleClick = onWasteTap,
-                        enableClicks = false,
                         modifier = Modifier
                             .fillMaxSize()
                             .onGloballyPositioned { wasteRect = it.boundsInRoot() }
-                            .pointerInput(topWaste) {
-                                detectTapGestures(
-                                    onTap = { onWasteTap() },
-                                    onDoubleTap = { onWasteTap() }
-                                )
-                            }
                             .pointerInput(topWaste, activeDrag) {
                                 detectDragGestures(
                                     onDragStart = {
@@ -577,6 +603,7 @@ private fun TableauArea(
     ui: com.example.klondikesolitaire.viewmodel.GameUiState,
     hintTableau: Set<Int>,
     activeDrag: ActiveDrag?,
+    selectedSource: CardSource?,
     onTargetRect: (DropTarget, Rect) -> Unit,
     onCardTap: (CardSource) -> Unit,
     onCardDoubleTap: (CardSource) -> Unit,
@@ -629,22 +656,14 @@ private fun TableauArea(
                         card = card,
                         faceStyle = ui.selectedTheme.faceStyle,
                         backStyle = ui.selectedTheme.cardBackStyle,
-                        isSelected = activeDrag?.source == source,
+                        isSelected = activeDrag?.source == source || selectedSource == source,
                         onClick = { onCardTap(source) },
                         onDoubleClick = { onCardDoubleTap(source) },
-                        enableClicks = false,
                         modifier = Modifier
                             .offset(y = runningY)
                             .width(dims.cardWidth)
                             .height(dims.cardHeight)
                             .onGloballyPositioned { cardRect = it.boundsInRoot() }
-                            .pointerInput(card, source) {
-                                if (!card.faceUp) return@pointerInput
-                                detectTapGestures(
-                                    onTap = { onCardTap(source) },
-                                    onDoubleTap = { onCardDoubleTap(source) }
-                                )
-                            }
                             .pointerInput(card, source, activeDrag) {
                                 if (!card.faceUp) return@pointerInput
                                 detectDragGestures(
@@ -685,21 +704,22 @@ private fun BottomBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(82.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        tonalElevation = 8.dp,
-        shadowElevation = 12.dp
+            .height(92.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        tonalElevation = 10.dp,
+        shadowElevation = 14.dp,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             BottomBarItem(icon = "⚙", label = "Settings", onClick = onSettings)
             BottomBarItem(icon = "🎨", label = "Themes", onClick = onThemes)
-            BottomBarItem(icon = "▶", label = "Play", onClick = onPlay, emphasized = true)
+            BottomBarPlayItem(onClick = onPlay)
             BottomBarItem(icon = "💡", label = "Hints", onClick = onHints)
             BottomBarItem(icon = "↶", label = "Undo", onClick = onUndo)
         }
@@ -710,20 +730,38 @@ private fun BottomBar(
 private fun BottomBarItem(
     icon: String,
     label: String,
-    onClick: () -> Unit,
-    emphasized: Boolean = false
+    onClick: () -> Unit
 ) {
-    val iconSize = if (emphasized) 30.sp else 22.sp
-    val textStyle = if (emphasized) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium
-
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .combinedClickable(onClick = onClick)
+            .clickable(onClick = onClick)
             .padding(horizontal = 2.dp)
     ) {
-        Text(icon, fontSize = iconSize)
-        Text(label, style = textStyle)
+        Text(icon, fontSize = 22.sp)
+        Text(label, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
+private fun BottomBarPlayItem(onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(46.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = CircleShape
+                )
+                .border(1.dp, MaterialTheme.colorScheme.primary, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("▶", fontSize = 24.sp, color = MaterialTheme.colorScheme.primary)
+        }
+        Text("Play", style = MaterialTheme.typography.labelLarge)
     }
 }
 

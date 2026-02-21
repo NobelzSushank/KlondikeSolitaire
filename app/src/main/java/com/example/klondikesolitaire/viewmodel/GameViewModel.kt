@@ -242,10 +242,18 @@ class GameViewModel(appContext: Context) : ViewModel() {
             CardSource.Stock -> drawFromStock()
 
             CardSource.WasteTop -> {
-                // Try move waste -> any foundation.
                 val targets = KlondikeEngine.legalTargetsForSelection(_ui.value.game, KlondikeEngine.Selection.WasteTop)
-                val f = targets.foundationTargets.firstOrNull() ?: return
-                applyMove(Move.WasteToFoundation(f), scoreDelta = 10)
+
+                // Prefer foundation (classic assist behavior).
+                val foundation = targets.foundationTargets.firstOrNull()
+                if (foundation != null) {
+                    applyMove(Move.WasteToFoundation(foundation), scoreDelta = 10)
+                    return
+                }
+
+                // Fallback to tableau so tap feels responsive when no foundation move exists.
+                val tableau = targets.tableauTargets.firstOrNull() ?: return
+                applyMove(Move.WasteToTableau(tableau), scoreDelta = 0)
             }
 
             is CardSource.Tableau -> {
