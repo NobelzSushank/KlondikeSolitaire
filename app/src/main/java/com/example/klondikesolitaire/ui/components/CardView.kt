@@ -2,6 +2,7 @@ package com.example.klondikesolitaire.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,7 +35,7 @@ fun CardView(
     backStyle: String,
     isSelected: Boolean,
     onClick: () -> Unit,
-    onDoubleClick: () -> Unit,
+    onDoubleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     enableClicks: Boolean = true
 ) {
@@ -44,10 +45,14 @@ fun CardView(
     }
 
     val touchModifier = if (enableClicks) {
-        Modifier.combinedClickable(
-            onClick = onClick,
-            onDoubleClick = onDoubleClick
-        )
+        if (onDoubleClick != null) {
+            Modifier.combinedClickable(
+                onClick = onClick,
+                onDoubleClick = onDoubleClick
+            )
+        } else {
+            Modifier.clickable(onClick = onClick)
+        }
     } else {
         Modifier
     }

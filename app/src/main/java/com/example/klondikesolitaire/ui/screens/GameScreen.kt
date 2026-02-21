@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -83,6 +84,7 @@ import com.example.klondikesolitaire.viewmodel.CardSource
 import com.example.klondikesolitaire.viewmodel.GameViewModel
 import com.example.klondikesolitaire.viewmodel.GameViewModelFactory
 import kotlinx.coroutines.delay
+import android.os.SystemClock
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -143,6 +145,8 @@ fun GameScreen(
     var hintFoundations by remember { mutableStateOf(emptySet<Int>()) }
     var hintTableau by remember { mutableStateOf(emptySet<Int>()) }
     var selectedSource by remember { mutableStateOf<CardSource?>(null) }
+    var lastTapSource by remember { mutableStateOf<CardSource?>(null) }
+    var lastTapUptimeMs by remember { mutableLongStateOf(0L) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showThemesDialog by remember { mutableStateOf(false) }
 
@@ -290,29 +294,36 @@ fun GameScreen(
                         leftHandedMode = appSettings.leftHandedMode,
                         onTargetRect = { target, rect -> targetRects[target] = rect },
                         onCardTap = { source ->
-                            val current = selectedSource
-                            if (current is CardSource.Tableau && source is CardSource.Tableau && current.column != source.column) {
-                                val move = Move.TableauToTableau(
-                                    fromColumn = current.column,
-                                    fromIndex = current.index,
-                                    toColumn = source.column
-                                )
-                                if (KlondikeEngine.validateMove(ui.game, move)) {
-                                    vm.dragMove(current, CardDestination.Tableau(source.column))
-                                    soundManager.playMove(appSettings.soundEnabled)
-                                    hapticsManager.performLight(appSettings.hapticsEnabled)
-                                } else {
-                                    soundManager.playInvalid(appSettings.soundEnabled)
-                                }
+                            val now = SystemClock.uptimeMillis()
+                            val isDoubleTap = lastTapSource == source && (now - lastTapUptimeMs) <= 260L
+                            lastTapSource = source
+                            lastTapUptimeMs = now
+
+                            if (isDoubleTap) {
+                                vm.tapCardAssist(source)
+                                soundManager.playMove(appSettings.soundEnabled)
+                                hapticsManager.performLight(appSettings.hapticsEnabled)
                                 selectedSource = null
                             } else {
-                                selectedSource = source
+                                val current = selectedSource
+                                if (current is CardSource.Tableau && source is CardSource.Tableau && current.column != source.column) {
+                                    val move = Move.TableauToTableau(
+                                        fromColumn = current.column,
+                                        fromIndex = current.index,
+                                        toColumn = source.column
+                                    )
+                                    if (KlondikeEngine.validateMove(ui.game, move)) {
+                                        vm.dragMove(current, CardDestination.Tableau(source.column))
+                                        soundManager.playMove(appSettings.soundEnabled)
+                                        hapticsManager.performLight(appSettings.hapticsEnabled)
+                                    } else {
+                                        soundManager.playInvalid(appSettings.soundEnabled)
+                                    }
+                                    selectedSource = null
+                                } else {
+                                    selectedSource = source
+                                }
                             }
-                        },
-                        onCardDoubleTap = { source ->
-                            vm.tapCardAssist(source)
-                            soundManager.playMove(appSettings.soundEnabled)
-                            hapticsManager.performLight(appSettings.hapticsEnabled)
                         },
                         onStartCardDrag = { source, card, startTopLeft, size ->
                             val legal = when (source) {
@@ -705,7 +716,6 @@ private fun TableauArea(
     leftHandedMode: Boolean,
     onTargetRect: (DropTarget, Rect) -> Unit,
     onCardTap: (CardSource) -> Unit,
-    onCardDoubleTap: (CardSource) -> Unit,
     onStartCardDrag: (CardSource, Card, Offset, IntSize) -> Unit,
     onCardDrag: (Offset) -> Unit,
     onEndDrag: () -> Unit
@@ -757,7 +767,7 @@ private fun TableauArea(
                         backStyle = ui.selectedTheme.cardBackStyle,
                         isSelected = activeDrag?.source == source || selectedSource == source,
                         onClick = { onCardTap(source) },
-                        onDoubleClick = { onCardDoubleTap(source) },
+                        onDoubleClick = null,
                         enableClicks = false,
                         modifier = Modifier
                             .offset(y = runningY)
@@ -766,10 +776,7 @@ private fun TableauArea(
                             .onGloballyPositioned { cardRect = it.boundsInRoot() }
                             .pointerInput(card, source) {
                                 if (!card.faceUp) return@pointerInput
-                                detectTapGestures(
-                                    onTap = { onCardTap(source) },
-                                    onDoubleTap = { onCardDoubleTap(source) }
-                                )
+                                detectTapGestures(onTap = { onCardTap(source) })
                             }
                             .pointerInput(card, source, activeDrag) {
                                 if (!card.faceUp) return@pointerInput
