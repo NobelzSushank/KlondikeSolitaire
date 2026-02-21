@@ -32,6 +32,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,6 +51,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -61,6 +63,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.klondikesolitaire.audio.SoundManager
 import com.example.klondikesolitaire.game.engine.KlondikeEngine
 import com.example.klondikesolitaire.data.AppDataStore
 import com.example.klondikesolitaire.data.AppSettings
@@ -71,6 +74,7 @@ import com.example.klondikesolitaire.game.model.Move
 import com.example.klondikesolitaire.ui.components.CardView
 import com.example.klondikesolitaire.ui.components.DecorativeSquareSlot
 import com.example.klondikesolitaire.ui.components.SlotView
+import com.example.klondikesolitaire.haptics.HapticsManager
 import com.example.klondikesolitaire.ui.game.layout.GameDimensions
 import com.example.klondikesolitaire.ui.game.layout.LayoutDebugOverlay
 import com.example.klondikesolitaire.viewmodel.CardDestination
@@ -110,10 +114,24 @@ fun GameScreen(
     var alwaysShowAutoComplete by rememberSaveable { mutableStateOf(false) }
 
     val appContext = LocalContext.current.applicationContext
+    val hostView = LocalView.current
     val vm: GameViewModel = viewModel(factory = GameViewModelFactory(appContext))
     val ui by vm.ui.collectAsState()
     val appStore = remember(appContext) { AppDataStore(appContext) }
     val appSettings by appStore.settingsFlow.collectAsState(initial = AppSettings())
+    val soundManager = remember(appContext) { SoundManager(appContext) }
+    val hapticsManager = remember(hostView) { HapticsManager(hostView) }
+
+    DisposableEffect(soundManager) {
+        onDispose { soundManager.release() }
+    }
+
+    LaunchedEffect(ui.showWinSheet) {
+        if (ui.showWinSheet) {
+            soundManager.playWin(appSettings.soundEnabled)
+            hapticsManager.performHeavy(appSettings.hapticsEnabled)
+        }
+    }
 
     val scope = rememberCoroutineScope()
     val targetRects = remember { mutableStateMapOf<DropTarget, Rect>() }
@@ -192,8 +210,16 @@ fun GameScreen(
                         selectedSource = selectedSource,
                         leftHandedMode = appSettings.leftHandedMode,
                         onTargetRect = { target, rect -> targetRects[target] = rect },
-                        onStockTap = { vm.drawFromStock() },
-                        onWasteTap = { vm.tapCardAssist(CardSource.WasteTop) },
+                        onStockTap = {
+                            vm.drawFromStock()
+                            soundManager.playDeal(appSettings.soundEnabled)
+                            hapticsManager.performLight(appSettings.hapticsEnabled)
+                        },
+                        onWasteTap = {
+                            vm.tapCardAssist(CardSource.WasteTop)
+                            soundManager.playMove(appSettings.soundEnabled)
+                            hapticsManager.performLight(appSettings.hapticsEnabled)
+                        },
                         onStartWasteDrag = { card, startTopLeft, size ->
                             val legal = KlondikeEngine.legalTargetsForSelection(
                                 ui.game,
@@ -229,8 +255,11 @@ fun GameScreen(
                                 onSuccess = {
                                     activeDrag = null
                                     dragOffset = Offset.Zero
+                                    soundManager.playMove(appSettings.soundEnabled)
+                                    hapticsManager.performLight(appSettings.hapticsEnabled)
                                 },
                                 onIllegal = {
+                                    soundManager.playInvalid(appSettings.soundEnabled)
                                     scope.launch {
                                         val startX = dragOffset.x
                                         val startY = dragOffset.y
@@ -260,7 +289,11 @@ fun GameScreen(
                         leftHandedMode = appSettings.leftHandedMode,
                         onTargetRect = { target, rect -> targetRects[target] = rect },
                         onCardTap = { source -> selectedSource = source },
-                        onCardDoubleTap = { source -> vm.tapCardAssist(source) },
+                        onCardDoubleTap = { source ->
+                            vm.tapCardAssist(source)
+                            soundManager.playMove(appSettings.soundEnabled)
+                            hapticsManager.performLight(appSettings.hapticsEnabled)
+                        },
                         onStartCardDrag = { source, card, startTopLeft, size ->
                             val legal = when (source) {
                                 is CardSource.Tableau -> KlondikeEngine.legalTargetsForSelection(
@@ -299,8 +332,11 @@ fun GameScreen(
                                 onSuccess = {
                                     activeDrag = null
                                     dragOffset = Offset.Zero
+                                    soundManager.playMove(appSettings.soundEnabled)
+                                    hapticsManager.performLight(appSettings.hapticsEnabled)
                                 },
                                 onIllegal = {
+                                    soundManager.playInvalid(appSettings.soundEnabled)
                                     scope.launch {
                                         val startX = dragOffset.x
                                         val startY = dragOffset.y
@@ -389,7 +425,11 @@ fun GameScreen(
                     .padding(bottom = navBarBottom),
                 onSettings = { showSettingsDialog = true },
                 onThemes = { showThemesDialog = true },
-                onPlay = { vm.startNewGame(if (appSettings.drawModeIsThree) DrawMode.Draw3 else DrawMode.Draw1) },
+                onPlay = {
+                    vm.startNewGame(if (appSettings.drawModeIsThree) DrawMode.Draw3 else DrawMode.Draw1)
+                    soundManager.playDeal(appSettings.soundEnabled)
+                    hapticsManager.performLight(appSettings.hapticsEnabled)
+                },
                 onHints = {
                     vm.hint()
                     val hintTargets = findHintTargets(ui.game)
@@ -439,7 +479,7 @@ fun GameScreen(
                     },
                     onNewGame = {
                         showPauseDialog = false
-                        vm.startNewGame()
+                        vm.startNewGame(if (appSettings.drawModeIsThree) DrawMode.Draw3 else DrawMode.Draw1)
                     },
                     onHome = {
                         showPauseDialog = false
@@ -456,7 +496,11 @@ fun GameScreen(
 
             if (ui.showWinSheet) {
                 WinDialog(
-                    onPlayAgain = { vm.startNewGame(ui.drawMode) },
+                    onPlayAgain = {
+                    vm.startNewGame(ui.drawMode)
+                    soundManager.playDeal(appSettings.soundEnabled)
+                    hapticsManager.performLight(appSettings.hapticsEnabled)
+                },
                     onHome = {
                         vm.saveGameOnBackground()
                         onGoHome()
