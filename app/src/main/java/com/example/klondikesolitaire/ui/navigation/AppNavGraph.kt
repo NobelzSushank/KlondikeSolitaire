@@ -75,11 +75,17 @@ fun AppNavGraph(
         }
 
         composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+            SettingsScreen(
+                appViewModel = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(Routes.STATS) {
-            StatsScreen(onBack = { navController.popBackStack() })
+            StatsScreen(
+                appViewModel = appViewModel,
+                onBack = { navController.popBackStack() }
+            )
         }
     }
 }

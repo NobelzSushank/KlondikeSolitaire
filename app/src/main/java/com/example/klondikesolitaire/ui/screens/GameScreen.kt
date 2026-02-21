@@ -62,7 +62,10 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.klondikesolitaire.game.engine.KlondikeEngine
+import com.example.klondikesolitaire.data.AppDataStore
+import com.example.klondikesolitaire.data.AppSettings
 import com.example.klondikesolitaire.game.model.Card
+import com.example.klondikesolitaire.game.model.DrawMode
 import com.example.klondikesolitaire.game.model.GameState
 import com.example.klondikesolitaire.game.model.Move
 import com.example.klondikesolitaire.ui.components.CardView
@@ -109,6 +112,8 @@ fun GameScreen(
     val appContext = LocalContext.current.applicationContext
     val vm: GameViewModel = viewModel(factory = GameViewModelFactory(appContext))
     val ui by vm.ui.collectAsState()
+    val appStore = remember(appContext) { AppDataStore(appContext) }
+    val appSettings by appStore.settingsFlow.collectAsState(initial = AppSettings())
 
     val scope = rememberCoroutineScope()
     val targetRects = remember { mutableStateMapOf<DropTarget, Rect>() }
@@ -124,7 +129,7 @@ fun GameScreen(
 
     LaunchedEffect(entryMode) {
         when (entryMode) {
-            GameEntryMode.ForceNew -> vm.startNewGame()
+            GameEntryMode.ForceNew -> vm.startNewGame(if (appSettings.drawModeIsThree) DrawMode.Draw3 else DrawMode.Draw1)
             GameEntryMode.ContinueOrNew -> vm.continueGame()
         }
     }
@@ -185,6 +190,7 @@ fun GameScreen(
                         hintFoundations = hintFoundations,
                         activeDrag = activeDrag,
                         selectedSource = selectedSource,
+                        leftHandedMode = appSettings.leftHandedMode,
                         onTargetRect = { target, rect -> targetRects[target] = rect },
                         onStockTap = { vm.drawFromStock() },
                         onWasteTap = { vm.tapCardAssist(CardSource.WasteTop) },
@@ -251,6 +257,7 @@ fun GameScreen(
                         hintTableau = hintTableau,
                         activeDrag = activeDrag,
                         selectedSource = selectedSource,
+                        leftHandedMode = appSettings.leftHandedMode,
                         onTargetRect = { target, rect -> targetRects[target] = rect },
                         onCardTap = { source -> selectedSource = source },
                         onCardDoubleTap = { source -> vm.tapCardAssist(source) },
@@ -354,9 +361,11 @@ fun GameScreen(
                 }
             }
 
-            val endgameLikely = remember(ui.game, alwaysShowAutoComplete) {
-                alwaysShowAutoComplete ||
-                    (ui.stock.isEmpty() && ui.waste.isEmpty() && ui.foundations.sumOf { it.size } >= 20)
+            val endgameLikely = remember(ui.game, alwaysShowAutoComplete, appSettings.autocompleteEnabled) {
+                appSettings.autocompleteEnabled && (
+                    alwaysShowAutoComplete ||
+                        (ui.stock.isEmpty() && ui.waste.isEmpty() && ui.foundations.sumOf { it.size } >= 20)
+                )
             }
 
             if (endgameLikely) {
@@ -380,7 +389,7 @@ fun GameScreen(
                     .padding(bottom = navBarBottom),
                 onSettings = { showSettingsDialog = true },
                 onThemes = { showThemesDialog = true },
-                onPlay = { vm.startNewGame() },
+                onPlay = { vm.startNewGame(if (appSettings.drawModeIsThree) DrawMode.Draw3 else DrawMode.Draw1) },
                 onHints = {
                     vm.hint()
                     val hintTargets = findHintTargets(ui.game)
@@ -494,6 +503,7 @@ private fun TopRowArea(
     hintFoundations: Set<Int>,
     activeDrag: ActiveDrag?,
     selectedSource: CardSource?,
+    leftHandedMode: Boolean,
     onTargetRect: (DropTarget, Rect) -> Unit,
     onStockTap: () -> Unit,
     onWasteTap: () -> Unit,
@@ -507,65 +517,77 @@ private fun TopRowArea(
         verticalAlignment = Alignment.Top
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(dims.topRowGap)) {
-            SlotView(
-                highlighted = false,
-                cornerRadius = dims.slotCornerRadius,
-                borderWidth = dims.slotBorderWidth,
-                modifier = Modifier
-                    .width(dims.cardWidth)
-                    .height(dims.cardHeight)
-                    .combinedClickable(onClick = onStockTap)
-            ) {
-                val stockTop = ui.stock.lastOrNull()
-                if (stockTop != null) {
-                    CardView(
-                        card = stockTop,
-                        faceStyle = ui.selectedTheme.faceStyle,
-                        backStyle = ui.selectedTheme.cardBackStyle,
-                        isSelected = false,
-                        onClick = onStockTap,
-                        onDoubleClick = onStockTap,
-                        modifier = Modifier.fillMaxSize()
-                    )
+            val stockSlot: @Composable () -> Unit = {
+                SlotView(
+                    highlighted = false,
+                    cornerRadius = dims.slotCornerRadius,
+                    borderWidth = dims.slotBorderWidth,
+                    modifier = Modifier
+                        .width(dims.cardWidth)
+                        .height(dims.cardHeight)
+                        .combinedClickable(onClick = onStockTap)
+                ) {
+                    val stockTop = ui.stock.lastOrNull()
+                    if (stockTop != null) {
+                        CardView(
+                            card = stockTop,
+                            faceStyle = ui.selectedTheme.faceStyle,
+                            backStyle = ui.selectedTheme.cardBackStyle,
+                            isSelected = false,
+                            onClick = onStockTap,
+                            onDoubleClick = onStockTap,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
 
-            SlotView(
-                highlighted = false,
-                cornerRadius = dims.slotCornerRadius,
-                borderWidth = dims.slotBorderWidth,
-                modifier = Modifier
-                    .width(dims.cardWidth)
-                    .height(dims.cardHeight)
-            ) {
-                val topWaste = ui.waste.lastOrNull()
-                if (topWaste != null) {
-                    var wasteRect by remember { mutableStateOf(Rect.Zero) }
-                    CardView(
-                        card = topWaste,
-                        faceStyle = ui.selectedTheme.faceStyle,
-                        backStyle = ui.selectedTheme.cardBackStyle,
-                        isSelected = activeDrag?.source == CardSource.WasteTop || selectedSource == CardSource.WasteTop,
-                        onClick = onWasteTap,
-                        onDoubleClick = onWasteTap,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .onGloballyPositioned { wasteRect = it.boundsInRoot() }
-                            .pointerInput(topWaste, activeDrag) {
-                                detectDragGestures(
-                                    onDragStart = {
-                                        onStartWasteDrag(topWaste, wasteRect.topLeft, IntSize(wasteRect.width.roundToInt(), wasteRect.height.roundToInt()))
-                                    },
-                                    onDragEnd = onEndDrag,
-                                    onDragCancel = onEndDrag,
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        onWasteDrag(dragAmount)
-                                    }
-                                )
-                            }
-                    )
+            val wasteSlot: @Composable () -> Unit = {
+                SlotView(
+                    highlighted = false,
+                    cornerRadius = dims.slotCornerRadius,
+                    borderWidth = dims.slotBorderWidth,
+                    modifier = Modifier
+                        .width(dims.cardWidth)
+                        .height(dims.cardHeight)
+                ) {
+                    val topWaste = ui.waste.lastOrNull()
+                    if (topWaste != null) {
+                        var wasteRect by remember { mutableStateOf(Rect.Zero) }
+                        CardView(
+                            card = topWaste,
+                            faceStyle = ui.selectedTheme.faceStyle,
+                            backStyle = ui.selectedTheme.cardBackStyle,
+                            isSelected = activeDrag?.source == CardSource.WasteTop || selectedSource == CardSource.WasteTop,
+                            onClick = onWasteTap,
+                            onDoubleClick = onWasteTap,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .onGloballyPositioned { wasteRect = it.boundsInRoot() }
+                                .pointerInput(topWaste, activeDrag) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            onStartWasteDrag(topWaste, wasteRect.topLeft, IntSize(wasteRect.width.roundToInt(), wasteRect.height.roundToInt()))
+                                        },
+                                        onDragEnd = onEndDrag,
+                                        onDragCancel = onEndDrag,
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            onWasteDrag(dragAmount)
+                                        }
+                                    )
+                                }
+                        )
+                    }
                 }
+            }
+
+            if (leftHandedMode) {
+                wasteSlot()
+                stockSlot()
+            } else {
+                stockSlot()
+                wasteSlot()
             }
         }
 
@@ -616,6 +638,7 @@ private fun TableauArea(
     hintTableau: Set<Int>,
     activeDrag: ActiveDrag?,
     selectedSource: CardSource?,
+    leftHandedMode: Boolean,
     onTargetRect: (DropTarget, Rect) -> Unit,
     onCardTap: (CardSource) -> Unit,
     onCardDoubleTap: (CardSource) -> Unit,
