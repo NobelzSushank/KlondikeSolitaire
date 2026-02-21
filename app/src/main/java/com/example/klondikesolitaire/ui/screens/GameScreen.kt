@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -53,6 +54,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.klondikesolitaire.game.engine.KlondikeEngine
 import com.example.klondikesolitaire.game.model.Card
@@ -126,6 +131,8 @@ fun GameScreen(
             val dims = remember(maxWidth, maxHeight) {
                 GameDimensions.calculate(maxWidth = maxWidth, maxHeight = maxHeight)
             }
+            val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
             val bgBrush = Brush.verticalGradient(
                 colors = listOf(
@@ -143,8 +150,8 @@ fun GameScreen(
                         PaddingValues(
                             start = dims.sidePadding,
                             end = dims.sidePadding,
-                            top = dims.hudPaddingTop,
-                            bottom = dims.bottomBarHeight + 10.dp
+                            top = dims.hudPaddingTop + statusBarTop,
+                            bottom = dims.bottomBarHeight + 10.dp + navBarBottom
                         )
                     )
             ) {
@@ -340,7 +347,7 @@ fun GameScreen(
                     onClick = { vm.autocomplete() },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = dims.bottomBarHeight + 10.dp)
+                        .padding(bottom = dims.bottomBarHeight + 10.dp + navBarBottom)
                         .combinedClickable(
                             onClick = { vm.autocomplete() },
                             onLongClick = { alwaysShowAutoComplete = !alwaysShowAutoComplete }
@@ -351,7 +358,9 @@ fun GameScreen(
             }
 
             BottomBar(
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = navBarBottom),
                 onSettings = { showLayoutDebug = !showLayoutDebug },
                 onThemes = { /* reserved for themes nav */ },
                 onPlay = { vm.startNewGame() },
@@ -494,9 +503,16 @@ private fun TopRowArea(
                         isSelected = activeDrag?.source == CardSource.WasteTop,
                         onClick = onWasteTap,
                         onDoubleClick = onWasteTap,
+                        enableClicks = false,
                         modifier = Modifier
                             .fillMaxSize()
                             .onGloballyPositioned { wasteRect = it.boundsInRoot() }
+                            .pointerInput(topWaste) {
+                                detectTapGestures(
+                                    onTap = { onWasteTap() },
+                                    onDoubleTap = { onWasteTap() }
+                                )
+                            }
                             .pointerInput(topWaste, activeDrag) {
                                 detectDragGestures(
                                     onDragStart = {
@@ -616,11 +632,19 @@ private fun TableauArea(
                         isSelected = activeDrag?.source == source,
                         onClick = { onCardTap(source) },
                         onDoubleClick = { onCardDoubleTap(source) },
+                        enableClicks = false,
                         modifier = Modifier
                             .offset(y = runningY)
                             .width(dims.cardWidth)
                             .height(dims.cardHeight)
                             .onGloballyPositioned { cardRect = it.boundsInRoot() }
+                            .pointerInput(card, source) {
+                                if (!card.faceUp) return@pointerInput
+                                detectTapGestures(
+                                    onTap = { onCardTap(source) },
+                                    onDoubleTap = { onCardDoubleTap(source) }
+                                )
+                            }
                             .pointerInput(card, source, activeDrag) {
                                 if (!card.faceUp) return@pointerInput
                                 detectDragGestures(

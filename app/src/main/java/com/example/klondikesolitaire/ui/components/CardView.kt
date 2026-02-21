@@ -35,20 +35,27 @@ fun CardView(
     isSelected: Boolean,
     onClick: () -> Unit,
     onDoubleClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enableClicks: Boolean = true
 ) {
     val borderColor = when {
         isSelected -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
     }
 
+    val touchModifier = if (enableClicks) {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onDoubleClick = onDoubleClick
+        )
+    } else {
+        Modifier
+    }
+
     Surface(
         modifier = modifier
             .border(1.dp, borderColor, MaterialTheme.shapes.small)
-            .combinedClickable(
-                onClick = onClick,
-                onDoubleClick = onDoubleClick
-            ),
+            .then(touchModifier),
         shape = MaterialTheme.shapes.small,
         tonalElevation = 2.dp
     ) {
