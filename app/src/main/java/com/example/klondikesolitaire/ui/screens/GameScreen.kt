@@ -390,9 +390,12 @@ fun GameScreen(
                 AlertDialog(
                     onDismissRequest = { showSettingsDialog = false },
                     title = { Text("Settings") },
-                    text = { Text("Settings panel will be connected here.
-
-Tip: Use Play for a fresh deal, Hints for legal-target glow, and Undo to roll back.") },
+                    text = {
+                        Text(
+                            "Settings panel will be connected here.\n\n" +
+                                "Tip: Use Play for a fresh deal, Hints for legal-target glow, and Undo to roll back."
+                        )
+                    },
                     confirmButton = {
                         Button(onClick = { showSettingsDialog = false }) { Text("Close") }
                     }
