@@ -5,16 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.klondikesolitaire.data.AppDataStore
 import com.example.klondikesolitaire.data.AppSettings
+import com.example.klondikesolitaire.data.AppStats
 import com.example.klondikesolitaire.data.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/**
- * Single source of truth for app-wide settings needed early (Splash -> Theme -> Navigation).
- */
 class AppViewModel(private val appContext: Context) : ViewModel() {
 
     private val store = AppDataStore(appContext)
@@ -22,27 +19,29 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings
 
+    private val _stats = MutableStateFlow(AppStats())
+    val stats: StateFlow<AppStats> = _stats
+
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized
 
-    /**
-     * Called from SplashScreen.
-     *
-     * Loads DataStore once and exposes it via StateFlow.
-     */
     fun initialize() {
         if (_isInitialized.value) return
 
         viewModelScope.launch {
-            // Read once for initialization, then continue collecting changes.
             val initial = store.settingsFlow.first()
             _settings.value = initial
             _isInitialized.value = true
 
-            // Keep collecting changes (Settings screen can update later).
             viewModelScope.launch {
                 store.settingsFlow.collect { newSettings ->
                     _settings.value = newSettings
+                }
+            }
+
+            viewModelScope.launch {
+                store.statsFlow.collect { value ->
+                    _stats.value = value
                 }
             }
         }
@@ -56,7 +55,51 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch { store.setHasSavedGame(value) }
     }
 
-    // Simple stubs to simulate game persistence for now:
-    fun createFakeSavedGame() = setHasSavedGame(true)
-    fun clearSavedGame() = setHasSavedGame(false)
+    fun setDrawMode(isDrawThree: Boolean) {
+        viewModelScope.launch { store.setDrawMode(isDrawThree) }
+    }
+
+    fun setSoundEnabled(value: Boolean) {
+        viewModelScope.launch { store.setSoundEnabled(value) }
+    }
+
+    fun setHapticsEnabled(value: Boolean) {
+        viewModelScope.launch { store.setHapticsEnabled(value) }
+    }
+
+    fun setNonPersonalizedAds(value: Boolean) {
+        viewModelScope.launch { store.setNonPersonalizedAds(value) }
+    }
+
+    fun setLeftHandedMode(value: Boolean) {
+        viewModelScope.launch { store.setLeftHandedMode(value) }
+    }
+
+    fun setAutocompleteEnabled(value: Boolean) {
+        viewModelScope.launch { store.setAutocompleteEnabled(value) }
+    }
+
+    fun setBackgroundStyle(styleId: String) {
+        viewModelScope.launch { store.setBackgroundStyle(styleId) }
+    }
+
+    fun setCardBackStyle(styleId: String) {
+        viewModelScope.launch { store.setCardBackStyle(styleId) }
+    }
+
+    fun setFaceStyle(styleId: String) {
+        viewModelScope.launch { store.setFaceStyle(styleId) }
+    }
+
+    fun startPremiumSession(durationMillis: Long = 20 * 60 * 1000L) {
+        viewModelScope.launch { store.startPremiumSession(durationMillis) }
+    }
+
+    fun resetStats() {
+        viewModelScope.launch { store.resetStats() }
+    }
+
+    fun clearSavedGame() {
+        viewModelScope.launch { store.clearSavedGame() }
+    }
 }

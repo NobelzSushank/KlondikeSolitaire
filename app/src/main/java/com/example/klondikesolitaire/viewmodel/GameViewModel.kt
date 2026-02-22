@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -59,7 +60,12 @@ data class GameUiState(
     // Internal meta
     val dealSeed: Long = 0L,
     val drawMode: DrawMode = DrawMode.Draw1
-)
+) {
+    val stock: List<com.example.klondikesolitaire.game.model.Card> get() = game.stock
+    val waste: List<com.example.klondikesolitaire.game.model.Card> get() = game.waste
+    val foundations: List<List<com.example.klondikesolitaire.game.model.Card>> get() = game.foundations
+    val tableau: List<List<com.example.klondikesolitaire.game.model.Card>> get() = game.tableau
+}
 
 sealed class CardSource {
     data object Stock : CardSource()
@@ -95,15 +101,19 @@ class GameViewModel(appContext: Context) : ViewModel() {
         viewModelScope.launch {
             combine(
                 store.statsFlow,
-                store.savedGameFlow.map { it != null }.distinctUntilChanged()
-            ) { stats, hasSave -> stats to hasSave }
-                .collect { (stats, hasSave) ->
+                store.savedGameFlow.map { it != null }.distinctUntilChanged(),
+                store.settingsFlow
+            ) { stats, hasSave, settings -> Triple(stats, hasSave, settings) }
+                .collect { (stats, hasSave, settings) ->
                     _ui.value = _ui.value.copy(
                         gamesPlayed = stats.gamesPlayed,
                         wins = stats.wins,
                         streak = stats.streak,
                         bestTimeMs = stats.bestWinTimeMs,
-                        savedGameExists = hasSave
+                        savedGameExists = hasSave,
+                        selectedTheme = settings.toThemeSelection(),
+                        premiumSessionRemainingMillis =
+                            (settings.premiumSessionEndsAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
                     )
                 }
         }
@@ -152,7 +162,7 @@ class GameViewModel(appContext: Context) : ViewModel() {
 
     fun continueGame() {
         viewModelScope.launch {
-            val dto = store.savedGameFlow.map { it }.distinctUntilChanged().collectFirstNonNull()
+            val dto = store.savedGameFlow.map { it }.distinctUntilChanged().firstOrNull { it != null }
             if (dto == null) {
                 // No saved game: start a new one
                 startNewGame(_ui.value.drawMode)
@@ -237,10 +247,18 @@ class GameViewModel(appContext: Context) : ViewModel() {
             CardSource.Stock -> drawFromStock()
 
             CardSource.WasteTop -> {
-                // Try move waste -> any foundation.
                 val targets = KlondikeEngine.legalTargetsForSelection(_ui.value.game, KlondikeEngine.Selection.WasteTop)
-                val f = targets.foundationTargets.firstOrNull() ?: return
-                applyMove(Move.WasteToFoundation(f), scoreDelta = 10)
+
+                // Prefer foundation (classic assist behavior).
+                val foundation = targets.foundationTargets.firstOrNull()
+                if (foundation != null) {
+                    applyMove(Move.WasteToFoundation(foundation), scoreDelta = 10)
+                    return
+                }
+
+                // Fallback to tableau so tap feels responsive when no foundation move exists.
+                val tableau = targets.tableauTargets.firstOrNull() ?: return
+                applyMove(Move.WasteToTableau(tableau), scoreDelta = 0)
             }
 
             is CardSource.Tableau -> {
@@ -428,20 +446,3 @@ class GameViewModel(appContext: Context) : ViewModel() {
         }
     }
 }
-
-/**
- * Small helper: collect the first non-null item from a flow.
- * Keeps code readable for beginners.
- */
-private suspend fun <T> kotlinx.coroutines.flow.Flow<T?>.collectFirstNonNull(): T? {
-    var result: T? = null
-    this.collect { value ->
-        if (value != null && result == null) {
-            result = value
-            throw StopCollectException
-        }
-    }
-    return result
-}
-
-private object StopCollectException : Throwable()

@@ -28,4 +28,16 @@ object AppPreferences {
     val STATS_WINS = intPreferencesKey("stats_wins")
     val STATS_STREAK = intPreferencesKey("stats_streak")
     val STATS_BEST_WIN_TIME_MS = longPreferencesKey("stats_best_win_time_ms")
+
+    val COSMETIC_BACKGROUND_STYLE = stringPreferencesKey("cosmetic_background_style")
+    val COSMETIC_CARD_BACK_STYLE = stringPreferencesKey("cosmetic_card_back_style")
+    val COSMETIC_FACE_STYLE = stringPreferencesKey("cosmetic_face_style")
+    val PREMIUM_SESSION_ENDS_AT_MS = longPreferencesKey("premium_session_ends_at_ms")
+
+    val SETTING_DRAW_MODE = intPreferencesKey("setting_draw_mode")
+    val SETTING_SOUND_ENABLED = booleanPreferencesKey("setting_sound_enabled")
+    val SETTING_HAPTICS_ENABLED = booleanPreferencesKey("setting_haptics_enabled")
+    val SETTING_NON_PERSONALIZED_ADS = booleanPreferencesKey("setting_non_personalized_ads")
+    val SETTING_LEFT_HANDED_MODE = booleanPreferencesKey("setting_left_handed_mode")
+    val SETTING_AUTOCOMPLETE_ENABLED = booleanPreferencesKey("setting_autocomplete_enabled")
 }
