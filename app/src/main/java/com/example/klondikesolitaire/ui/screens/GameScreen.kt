@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -322,6 +321,24 @@ fun GameScreen(
                                     selectedSource = null
                                 } else {
                                     selectedSource = source
+                                }
+                            }
+                        },
+                        onEmptyColumnTap = { targetColumn ->
+                            val current = selectedSource
+                            if (current is CardSource.Tableau && current.column != targetColumn) {
+                                val move = Move.TableauToTableau(
+                                    fromColumn = current.column,
+                                    fromIndex = current.index,
+                                    toColumn = targetColumn
+                                )
+                                if (KlondikeEngine.validateMove(ui.game, move)) {
+                                    vm.dragMove(current, CardDestination.Tableau(targetColumn))
+                                    soundManager.playMove(appSettings.soundEnabled)
+                                    hapticsManager.performLight(appSettings.hapticsEnabled)
+                                    selectedSource = null
+                                } else {
+                                    soundManager.playInvalid(appSettings.soundEnabled)
                                 }
                             }
                         },
@@ -716,6 +733,7 @@ private fun TableauArea(
     leftHandedMode: Boolean,
     onTargetRect: (DropTarget, Rect) -> Unit,
     onCardTap: (CardSource) -> Unit,
+    onEmptyColumnTap: (Int) -> Unit,
     onStartCardDrag: (CardSource, Card, Offset, IntSize) -> Unit,
     onCardDrag: (Offset) -> Unit,
     onEndDrag: () -> Unit
@@ -752,6 +770,7 @@ private fun TableauArea(
                         modifier = Modifier
                             .width(dims.cardWidth)
                             .height(dims.cardHeight)
+                            .clickable { onEmptyColumnTap(columnIndex) }
                     )
                 }
 
@@ -766,18 +785,14 @@ private fun TableauArea(
                         faceStyle = ui.selectedTheme.faceStyle,
                         backStyle = ui.selectedTheme.cardBackStyle,
                         isSelected = activeDrag?.source == source || selectedSource == source,
-                        onClick = { onCardTap(source) },
+                        onClick = { if (card.faceUp) onCardTap(source) },
                         onDoubleClick = null,
-                        enableClicks = false,
+                        enableClicks = true,
                         modifier = Modifier
                             .offset(y = runningY)
                             .width(dims.cardWidth)
                             .height(dims.cardHeight)
                             .onGloballyPositioned { cardRect = it.boundsInRoot() }
-                            .pointerInput(card, source) {
-                                if (!card.faceUp) return@pointerInput
-                                detectTapGestures(onTap = { onCardTap(source) })
-                            }
                             .pointerInput(card, source, activeDrag) {
                                 if (!card.faceUp) return@pointerInput
                                 detectDragGestures(
